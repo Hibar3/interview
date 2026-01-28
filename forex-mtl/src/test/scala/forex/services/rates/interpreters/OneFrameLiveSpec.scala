@@ -4,6 +4,7 @@ import cats.effect.IO
 import forex.config._
 import forex.domain._
 import forex.services.rates.errors.Error
+import forex.services.cache.CacheService
 import org.http4s._
 import org.http4s.client.Client
 import org.scalatest.flatspec.AnyFlatSpec
@@ -19,7 +20,7 @@ class OneFrameLiveSpec extends AnyFlatSpec with Matchers {
   val config = ConfigSource.default.at("app").load[ApplicationConfig].getOrElse(
     ApplicationConfig(
       HttpConfig("localhost", 8080, 40.seconds),
-      OneFrameConfig("http://localhost:8080", "token")
+      OneFrameConfig("http://localhost:8080", "token", 5.minutes)
     )
   )
 
@@ -41,7 +42,8 @@ class OneFrameLiveSpec extends AnyFlatSpec with Matchers {
       case _ => IO.pure(Response[IO](Status.Ok).withEntity(sampleJson))
     }.orNotFound)
 
-    val interpreter = new OneFrameLive[IO](config, client)
+    val cache = CacheService[IO].unsafeRunSync()
+    val interpreter = new OneFrameLive[IO](config, client, cache)
     val pair = Rate.Pair(Currency.USD, Currency.JPY)
 
     val result = interpreter.get(pair).unsafeRunSync()
@@ -60,7 +62,8 @@ class OneFrameLiveSpec extends AnyFlatSpec with Matchers {
       case _ => IO.pure(Response[IO](Status.Ok).withEntity(sampleJson))
     }.orNotFound)
 
-    val interpreter = new OneFrameLive[IO](config, client)
+    val cache = CacheService[IO].unsafeRunSync()
+    val interpreter = new OneFrameLive[IO](config, client, cache)
     val pair = Rate.Pair(Currency.EUR, Currency.USD) // Mismatch
 
     val result = interpreter.get(pair).unsafeRunSync()
@@ -73,7 +76,8 @@ class OneFrameLiveSpec extends AnyFlatSpec with Matchers {
       case _ => IO.pure(Response[IO](Status.Ok).withEntity("invalid json"))
     }.orNotFound)
 
-    val interpreter = new OneFrameLive[IO](config, client)
+    val cache = CacheService[IO].unsafeRunSync()
+    val interpreter = new OneFrameLive[IO](config, client, cache)
     val pair = Rate.Pair(Currency.USD, Currency.JPY)
 
     val result = interpreter.get(pair).unsafeRunSync()

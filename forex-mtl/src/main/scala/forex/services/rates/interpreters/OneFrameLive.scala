@@ -4,6 +4,7 @@ import forex.services.rates.Algebra
 import forex.domain._
 import forex.services.rates.errors.{ Error => RateError }
 import forex.config.ApplicationConfig
+import forex.services.cache.CacheService
 import cats.effect.Sync
 import cats.syntax.all._
 import org.http4s._
@@ -13,16 +14,35 @@ import org.http4s.Method.GET
 import org.typelevel.ci.CIString
 import io.circe._
 import io.circe.generic.semiauto._
-import java.time.{OffsetDateTime, LocalDateTime, ZoneOffset}
+import java.time.{OffsetDateTime, LocalDateTime, ZoneOffset, Instant}
+import java.time.temporal.ChronoUnit
 
 class OneFrameLive[F[_]: Sync](
     config: ApplicationConfig,
-    client: Client[F]
+    client: Client[F],
+    cache: CacheService[F]
 ) extends Algebra[F] {
 
   import OneFrameLive._
 
   override def get(pair: Rate.Pair): F[RateError Either Rate] = {
+    // First check cache
+    cache.get(pair).flatMap {
+      case Some(cachedRate) =>
+        // Validate freshness
+        if (isRateFresh(cachedRate)) {
+          Sync[F].pure(cachedRate.asRight[RateError])
+        } else {
+          // Remove stale rate from cache and fetch fresh
+          cache.remove(pair) >> fetchAndCacheRate(pair)
+        }
+      case None =>
+        // Cache miss - fetch from One-Frame
+        fetchAndCacheRate(pair)
+    }
+  }
+
+  private def fetchAndCacheRate(pair: Rate.Pair): F[RateError Either Rate] = {
     val uriResult = Uri.fromString(s"${config.oneFrame.baseUrl}/rates")
       .map(_.withQueryParam("pair", s"${pair.from}${pair.to}"))
 
@@ -35,27 +55,37 @@ class OneFrameLive[F[_]: Sync](
 
         client.run(request).use { response =>
           if (response.status.isSuccess) {
-            response.as[List[OneFrameRate]].map { rates =>
-              rates.find(r => r.from == pair.from && r.to == pair.to) match {
+            for {
+              rates <- response.as[List[OneFrameRate]]
+              result <- rates.find(r => r.from == pair.from && r.to == pair.to) match {
                 case Some(rate) =>
-                  Rate(
+                  val domainRate = Rate(
                     pair,
                     rate.price,
                     Price(rate.bid),
                     Price(rate.ask),
                     Timestamp(rate.time_stamp)
-                  ).asRight[RateError]
+                  )
+                  // Cache the rate and return
+                  cache.put(pair, domainRate, config.oneFrame.ttl).as(domainRate.asRight[RateError])
                 case None =>
-                  (RateError.OneFrameLookupFailed("Rate not found in response"): RateError).asLeft[Rate]
+                  Sync[F].pure((RateError.OneFrameLookupFailed("Rate not found in response"): RateError).asLeft[Rate])
               }
-            }
+            } yield result
           } else {
-            (RateError.OneFrameLookupFailed(s"Upstream returned status: ${response.status}"): RateError).asLeft[Rate].pure[F]
+            Sync[F].pure((RateError.OneFrameLookupFailed(s"Upstream returned status: ${response.status}"): RateError).asLeft[Rate])
           }
         }.handleError { e =>
           (RateError.OneFrameLookupFailed(s"Request failed: ${e.getMessage}"): RateError).asLeft[Rate]
         }
     }
+  }
+
+  private def isRateFresh(rate: Rate): Boolean = {
+    val now = Instant.now()
+    val rateTime = rate.timestamp.value.toInstant
+    val minutesDiff = ChronoUnit.MINUTES.between(rateTime, now)
+    minutesDiff <= config.oneFrame.ttl.toMinutes
   }
 }
 

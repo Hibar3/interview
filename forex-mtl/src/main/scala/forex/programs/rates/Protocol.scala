@@ -9,4 +9,10 @@ object Protocol {
       to: Currency
   )
 
+  final case class CompareRatesRequest(
+      from: Currency,
+      to: Currency,
+      amount: BigDecimal
+  )
+
 }

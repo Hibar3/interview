@@ -5,4 +5,5 @@ import errors._
 
 trait Algebra[F[_]] {
   def get(request: Protocol.GetRatesRequest): F[Error Either Rate]
+  def compare(request: Protocol.CompareRatesRequest): F[Error Either Rate]
 }

@@ -6,18 +6,22 @@ import forex.domain.Rate.Pair
 import forex.domain._
 import io.circe._
 import io.circe.generic.extras.Configuration
-import io.circe.generic.extras.semiauto.deriveConfiguredEncoder
+import io.circe.generic.extras.semiauto.{
+  deriveConfiguredDecoder,
+  deriveConfiguredEncoder
+}
 
 object Protocol {
 
   implicit val configuration: Configuration =
-    Configuration.default.withSnakeCaseMemberNames
+    Configuration.default
 
+  // Request body for GET /rates
   final case class GetApiRequest(
       from: Currency,
       to: Currency
   )
-
+  // Response body for GET /rates
   final case class GetApiResponse(
       from: Currency,
       to: Currency,
@@ -27,8 +31,34 @@ object Protocol {
       timestamp: Timestamp
   )
 
+  // Request body for POST /rates
+  final case class PostApiRequest(
+      from: Currency,
+      to: Currency,
+      amount: BigDecimal
+  )
+
+  // Response body for POST /rates
+  final case class PostApiResponse(
+      from: Currency,
+      to: Currency,
+      amount: BigDecimal,
+      exchangeRate: Price,
+      convertedAmount: BigDecimal,
+      timestamp: Timestamp
+  )
+
   implicit val currencyEncoder: Encoder[Currency] =
     Encoder.instance[Currency] { show.show _ andThen Json.fromString }
+
+  implicit val currencyDecoder: Decoder[Currency] =
+    Decoder.decodeString.emap { s =>
+      scala.util
+        .Try(Currency.fromString(s))
+        .toEither
+        .left
+        .map(_ => s"Invalid currency: $s")
+    }
 
   implicit val pairEncoder: Encoder[Pair] =
     deriveConfiguredEncoder[Pair]
@@ -38,5 +68,11 @@ object Protocol {
 
   implicit val responseEncoder: Encoder[GetApiResponse] =
     deriveConfiguredEncoder[GetApiResponse]
+
+  implicit val postRequestDecoder: Decoder[PostApiRequest] =
+    deriveConfiguredDecoder[PostApiRequest]
+
+  implicit val postResponseEncoder: Encoder[PostApiResponse] =
+    deriveConfiguredEncoder[PostApiResponse]
 
 }

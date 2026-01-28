@@ -47,6 +47,10 @@ object Protocol {
       convertedAmount: BigDecimal,
       timestamp: Timestamp
   )
+  // Response body for errors
+  final case class ErrorResponse(
+      message: String
+  )
 
   implicit val currencyEncoder: Encoder[Currency] =
     Encoder.instance[Currency] { show.show _ andThen Json.fromString }
@@ -71,8 +75,30 @@ object Protocol {
 
   implicit val postRequestDecoder: Decoder[PostApiRequest] =
     deriveConfiguredDecoder[PostApiRequest]
+      .emap { request =>
+        val errors = scala.collection.mutable.ListBuffer[String]()
+        
+        // Validate amount is not negative
+        if (request.amount < 0) {
+          errors += s"Field 'amount' must be a positive number"
+        }
+        
+        // Optional: Validate amount is not zero
+        // if (request.amount == 0) {
+        //   errors += "Field 'amount' must be greater than zero"
+        // }
+        
+        if (errors.nonEmpty) {
+          Left(errors.mkString("; "))
+        } else {
+          Right(request)
+        }
+      }
 
   implicit val postResponseEncoder: Encoder[PostApiResponse] =
     deriveConfiguredEncoder[PostApiResponse]
+
+  implicit val errorResponseEncoder: Encoder[ErrorResponse] =
+    deriveConfiguredEncoder[ErrorResponse]
 
 }

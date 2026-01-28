@@ -10,7 +10,8 @@ import io.circe.generic.extras.semiauto.deriveConfiguredEncoder
 
 object Protocol {
 
-  implicit val configuration: Configuration = Configuration.default.withSnakeCaseMemberNames
+  implicit val configuration: Configuration =
+    Configuration.default.withSnakeCaseMemberNames
 
   final case class GetApiRequest(
       from: Currency,
@@ -21,6 +22,8 @@ object Protocol {
       from: Currency,
       to: Currency,
       price: Price,
+      bid: Price,
+      ask: Price,
       timestamp: Timestamp
   )
 

@@ -38,7 +38,13 @@ class OneFrameLive[F[_]: Sync](
             response.as[List[OneFrameRate]].map { rates =>
               rates.find(r => r.from == pair.from && r.to == pair.to) match {
                 case Some(rate) =>
-                  Rate(pair, rate.price, Timestamp(rate.time_stamp)).asRight[RateError]
+                  Rate(
+                    pair,
+                    rate.price,
+                    Price(rate.bid),
+                    Price(rate.ask),
+                    Timestamp(rate.time_stamp)
+                  ).asRight[RateError]
                 case None =>
                   (RateError.OneFrameLookupFailed("Rate not found in response"): RateError).asLeft[Rate]
               }

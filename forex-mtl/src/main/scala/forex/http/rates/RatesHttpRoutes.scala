@@ -9,7 +9,7 @@ import forex.programs.rates.{Protocol => RatesProgramProtocol}
 import org.http4s.HttpRoutes
 import org.http4s.dsl.Http4sDsl
 import org.http4s.server.Router
-import org.http4s.ParseFailure
+import org.http4s.{ParseFailure, MessageFailure}
 import io.circe.{DecodingFailure, CursorOp}
 
 class RatesHttpRoutes[F[_]: Sync](rates: RatesProgram[F]) extends Http4sDsl[F] {
@@ -101,20 +101,22 @@ class RatesHttpRoutes[F[_]: Sync](rates: RatesProgram[F]) extends Http4sDsl[F] {
         }
         .handleErrorWith {
           case decodingFailure: DecodingFailure =>
-            // Extract field-specific error messages
-            val errorMessage = extractFieldError(decodingFailure)
-            BadRequest(ErrorResponse(errorMessage))
+            BadRequest(ErrorResponse(extractFieldError(decodingFailure)))
           case parseFailure: ParseFailure =>
-            BadRequest(
-              ErrorResponse(s"Invalid request: ${parseFailure.message}")
-            )
+            BadRequest(ErrorResponse(s"Invalid request: ${parseFailure.message}"))
+          case messageFailure: MessageFailure =>
+            val cause = messageFailure.cause
+            val errorMessage = cause match {
+              case Some(df: DecodingFailure) => extractFieldError(df)
+              case _                         => s"Invalid request: ${messageFailure.message}"
+            }
+            BadRequest(ErrorResponse(errorMessage))
           case throwable: Throwable =>
-            BadRequest(
-              ErrorResponse(s"Invalid request body: ${throwable.getMessage}")
-            )
+            BadRequest(ErrorResponse(s"Invalid request body: ${throwable.getMessage}"))
         }
   }
 
+  // Map program errors to HTTP responses
   private def mapProgramError(
       error: forex.programs.rates.errors.Error
   ): F[org.http4s.Response[F]] = {

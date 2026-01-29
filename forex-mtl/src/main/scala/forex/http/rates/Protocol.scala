@@ -83,11 +83,7 @@ object Protocol {
           errors += s"Field 'amount' must be a positive number"
         }
         
-        // Optional: Validate amount is not zero
-        // if (request.amount == 0) {
-        //   errors += "Field 'amount' must be greater than zero"
-        // }
-        
+        // checks if there are any errors in the list
         if (errors.nonEmpty) {
           Left(errors.mkString("; "))
         } else {
